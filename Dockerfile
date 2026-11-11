@@ -4,7 +4,7 @@
 # Runs on the build machine's own platform: the output is plain HTML/JS/CSS,
 # the same for every target. Building it under QEMU for arm64 crashes Vite 8's
 # native bundler (rolldown) with "Illegal instruction" and is slow anyway.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml* ./
