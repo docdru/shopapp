@@ -1,5 +1,9 @@
 # ShopApp
 
+[![CI](https://github.com/docdru/shopapp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/docdru/shopapp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Image](https://img.shields.io/badge/image-ghcr.io%2Fdocdru%2Fshopapp-2496ED?logo=docker&logoColor=white)](https://github.com/docdru/shopapp/pkgs/container/shopapp)
+
 A small self-hosted shopping list and household inventory app for the family.
 It's an installable web app (PWA) for Android phones and browsers, backed by
 [PocketBase](https://pocketbase.io). Changes sync live between everyone who's
