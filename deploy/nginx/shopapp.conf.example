@@ -1,0 +1,68 @@
+# nginx site for ShopApp.
+# Replace einkauf.example.com, get a certificate with certbot, then
+#   sudo cp shopapp.conf.example /etc/nginx/sites-available/shopapp.conf
+#   sudo ln -s ../sites-available/shopapp.conf /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# The PocketBase admin (dashboard + superuser API) is NOT reachable through
+# this site at all. Use an SSH tunnel instead (see deploy/README.md):
+#   ssh -L 8090:127.0.0.1:8090 you@server   →   http://localhost:8090/_/
+
+server {
+    # "listen ... ssl http2" works on old and new nginx (1.25+ prefers a
+    # separate "http2 on;" line and only warns about this form).
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name einkauf.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/einkauf.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/einkauf.example.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 10M;   # product photos later
+
+    # --- Security headers ------------------------------------------------
+    # Set here, at server level only: nginx drops inherited add_header lines
+    # in any location that has its own add_header, so don't add any below.
+    # The app's Content-Security-Policy comes from a <meta> tag in the page
+    # (web/svelte.config.js); this header only adds what <meta> can't do.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+    # camera=(self) keeps barcode scanning (phase 3) possible.
+    add_header Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" always;
+
+    # --- Admin surface: never public --------------------------------------
+    location ^~ /_/ { return 404; }
+    location ^~ /api/collections/_superusers/ { return 404; }
+    location ~ ^/api/(settings|backups|logs|crons)(/|$) { return 404; }
+
+    # --- App, API and realtime ---------------------------------------------
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        # PocketBase trusts X-Real-IP for rate limiting (see deploy/README.md):
+        # always overwrite it with the real client address.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # Realtime sync uses Server-Sent Events: no buffering, long timeout.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+    }
+}
+
+# Optional: plain HTTP → HTTPS redirect, only if port 80 is open on your server.
+# server {
+#     listen 80;
+#     listen [::]:80;
+#     server_name einkauf.example.com;
+#     return 301 https://$host$request_uri;
+# }

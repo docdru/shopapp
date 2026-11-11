@@ -1,0 +1,42 @@
+# Weekly dependency updates as PRs (CI runs on each). Security alerts for
+# vulnerable dependencies also need "Dependabot alerts" switched on under
+# Settings → Code security.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      svelte:
+        patterns: ["svelte", "svelte-check", "@sveltejs/*", "vite"]
+      dev-tools:
+        dependency-type: development
+    open-pull-requests-limit: 5
+    ignore:
+      # Node types follow the Node version we build with (see below); move
+      # both together by hand.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # SvelteKit 3 and svelte-check support TypeScript 6 only (Nov 2026).
+      # Remove once both list TypeScript 7 as a peer dependency.
+      - dependency-name: "typescript"
+        versions: [">=7"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Only long-term-support Node releases (even majors). Odd majors are
+      # short-lived; Node 25 also dropped corepack, which the build uses.
+      - dependency-name: node
+        versions: ["23.x", "25.x", "27.x", "29.x", "31.x", "33.x", "35.x", "37.x", "39.x"]

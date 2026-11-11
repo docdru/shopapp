@@ -1,0 +1,38 @@
+# Production: copy this file (and .env.example as .env) to the server, then
+#   docker compose pull && docker compose up -d
+# nginx on the host terminates HTTPS and proxies to 127.0.0.1:${APP_PORT}.
+
+services:
+  app:
+    image: ghcr.io/docdru/shopapp:${APP_TAG:-latest}
+    container_name: shopapp
+    restart: unless-stopped
+    # Must be able to write PB_DATA_DIR (see deploy/README.md → gocryptfs).
+    user: "${PB_UID:-10001}:${PB_GID:-10001}"
+    # SECURITY: only ever publish on 127.0.0.1. PocketBase trusts the
+    # X-Real-IP header (rate limiting, logs), which is only safe while nginx,
+    # overwriting that header, is the single way in. Never add another
+    # public port or proxy without revisiting that setting.
+    ports:
+      - "127.0.0.1:${APP_PORT:-8090}:8090"
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      # Optional. 32 characters; encrypts only the stored settings (SMTP / S3
+      # keys), not the data. Keep a copy: without it PocketBase can't start.
+      PB_ENCRYPTION_KEY: ${PB_ENCRYPTION_KEY:-}
+    volumes:
+      # Database + uploads live in PB_DATA_DIR on the host, a folder on the
+      # encrypted drive. create_host_path: false = if the folder isn't there
+      # (drive not unlocked yet), the container refuses to start instead of
+      # writing a fresh, unencrypted database onto the plain disk.
+      - type: bind
+        source: ${PB_DATA_DIR:?set PB_DATA_DIR in .env}
+        target: /pb/pb_data
+        bind:
+          create_host_path: false
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    pids_limit: 200

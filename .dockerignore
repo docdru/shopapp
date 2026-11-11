@@ -1,0 +1,9 @@
+**/node_modules
+**/.svelte-kit
+web/build
+pb/pb_data
+.git
+.github
+deploy
+docs
+*.md

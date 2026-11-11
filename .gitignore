@@ -1,0 +1,21 @@
+# dependencies & build output
+node_modules/
+web/.svelte-kit/
+web/build/
+
+# PocketBase local data (database, uploads, generated types)
+pb/pb_data/
+/pocketbase
+/*.zip
+
+# env & editor
+.env
+.env.*
+!.env.example
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# Python
+__pycache__/
+*.pyc

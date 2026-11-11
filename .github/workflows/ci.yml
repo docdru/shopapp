@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+env:
+  PB_VERSION: "0.40.6"
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  web:
+    name: Frontend check & build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+      # Bootstrap: commit the lockfile to the PR branch if it doesn't exist yet.
+      - name: Commit pnpm-lock.yaml if missing
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: .
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ -z "$(git ls-files web/pnpm-lock.yaml)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git fetch --depth=1 origin "$HEAD_REF"
+            git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
+            git add web/pnpm-lock.yaml
+            git commit -m "Add pnpm-lock.yaml"
+            git push origin "HEAD:$HEAD_REF"
+          fi
+      - name: Check (svelte-check, reported as annotations)
+        run: |
+          pnpm exec svelte-kit sync
+          pnpm exec svelte-check --tsconfig ./tsconfig.json --output machine | tee check.txt
+          # Turn ERROR/WARNING lines into GitHub annotations
+          awk '$2=="ERROR"||$2=="WARNING" {
+            lvl = ($2=="ERROR") ? "error" : "warning"; file=$3; gsub(/"/,"",file);
+            split($4, pos, ":"); msg=$0; sub(/^[^"]*"[^"]*" [0-9]+:[0-9]+ /,"",msg);
+            printf "::%s file=web/%s,line=%s,col=%s::%s\n", lvl, file, pos[1], pos[2], msg }' check.txt
+          ! grep -q " ERROR " check.txt
+          # The service worker is a separate TypeScript project (worker types).
+          pnpm exec svelte-check --tsconfig ./src/service-worker/tsconfig.json
+      - name: Build
+        if: always()
+        run: pnpm build
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: web-build
+          path: |
+            web/build
+            web/pnpm-lock.yaml
+          retention-days: 7
+
+  e2e:
+    name: End-to-end smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install & build
+        working-directory: web
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
+          pnpm build
+          pnpm exec playwright install --with-deps chromium
+      - name: Start PocketBase with test users
+        run: |
+          wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip" -O pb.zip
+          unzip -q pb.zip pocketbase
+          sh scripts/e2e-setup.sh ./pocketbase
+      - name: Playwright
+        working-directory: web
+        run: pnpm test:e2e
+      - name: nginx template (admin blocked, security headers)
+        run: bash scripts/nginx-test.sh
+      - name: Playwright live sync through nginx (SSE via proxy)
+        working-directory: web
+        env:
+          BASE_URL: https://einkauf.example.com
+        run: pnpm test:e2e --grep "syncs live"
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -O gl.tgz
+          wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -O gl.sums
+          grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz$" gl.sums | awk '{print $1"  gl.tgz"}' | sha256sum -c -
+          tar xzf gl.tgz gitleaks
+          ./gitleaks git --redact --verbose .
+
+  migrations:
+    name: Migrations apply cleanly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download PocketBase
+        run: |
+          wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip" -O pb.zip
+          unzip -q pb.zip pocketbase
+      - name: Apply migrations to a fresh database
+        run: ./pocketbase migrate up --dir /tmp/pb_data --migrationsDir pb/pb_migrations
+
+  image:
+    name: Docker image
+    needs: [web, migrations, e2e, secrets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build amd64 image for a local smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: app
+          platforms: linux/amd64
+          load: true
+          tags: shopapp:test
+          cache-from: type=gha
+      - name: Smoke-test the image (non-root, hardened flags, encrypted settings)
+        run: |
+          fail() { echo "::error::$1"; docker logs app 2>&1 | tail -30 | sed 's/^/::error::log: /'; exit 1; }
+          key=$(openssl rand -hex 16)
+          docker run -d --name app -p 127.0.0.1:8090:8090 \
+            --security-opt no-new-privileges:true --cap-drop ALL \
+            -e PB_ENCRYPTION_KEY="$key" shopapp:test || fail "docker run failed"
+          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:8090/api/health >/dev/null && break; sleep 1; done
+          curl -fs http://127.0.0.1:8090/api/health >/dev/null || fail "health check failed"
+          curl -fs http://127.0.0.1:8090/login | grep -qi 'content-security-policy' || fail "no CSP meta tag in /login"
+          uid=$(docker exec app id -u) || fail "docker exec failed"
+          [ "$uid" = "10001" ] || fail "container runs as uid $uid, expected 10001"
+          docker exec app /pb/pocketbase superuser upsert ci@example.com ci-password-123456 \
+            --dir /pb/pb_data --encryptionEnv=PB_ENCRYPTION_KEY \
+            || fail "superuser upsert failed"
+          echo "image smoke test OK"
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern=v{{version}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: app
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

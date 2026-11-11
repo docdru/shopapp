@@ -1,0 +1,68 @@
+# AI PR review config, used by the docdru/ai-review action
+# (.github/workflows/ai-review.yml). Read from main: a change takes effect
+# after it is merged. Try it first with --dry-run --config, see
+# https://github.com/docdru/ai-review#try-it-locally
+
+model = "mistral-large-2512"
+
+project = """
+'shopapp', a self-hosted family shopping list + household inventory PWA
+(PocketBase 0.40 backend with JS migrations in pb/pb_migrations; SvelteKit 2 /
+Svelte 5 / TypeScript static SPA in web/; one Docker image behind the host's
+nginx; used by a few family members on Android phones)."""
+
+instructions = """
+Known spec-sensitive areas: Bought vs. Not needed (only Bought is a purchase,
+sets stock back to ok and logs the store); every user action writes an `events`
+record (append-only, `user` must be the caller); one open list entry per (item,
+product), adding again bumps qty, generic and specific entries may coexist; stock
+rules (out -- or low if the item opts in -- adds to the list); store filter rules
+(here / "Better elsewhere" / hidden "N more"); product recommendation (never
+don't-buy / not sold here; preferred first, then lowest unit price); one-off
+entries never feed suggestions."""
+
+reference_docs = [
+  { path = "docs/spec.md", role = "the product spec, source of truth for behaviour (a snapshot of a living spec; it carries a \"Prototype sync log\")", max_chars = 250_000 },
+  { path = "CLAUDE.md", role = "architecture, security model and conventions; binding like the spec", max_chars = 250_000 },
+]
+
+# Not sent; their sources are reviewed instead (web/package.json).
+generated_files = ["web/pnpm-lock.yaml"]
+
+[[sections]]
+key = "security"
+title = "🔒 Security"
+security = true
+checklist = """
+this app is publicly reachable -- be strict. Check especially:
+- PocketBase API rules: every collection except `units` must use
+  `household = @request.auth.household` (create: body household must equal the
+  user's); no empty ("") or null rules that open a collection to everyone or lock
+  out users by accident; no public sign-up on `users`; `events.user` = caller.
+- XSS (the main browser risk, it could steal the localStorage auth token): no
+  `{@html}` with user data; the CSP in web/svelte.config.js stays strict (no new
+  script origins, no 'unsafe-eval'/'unsafe-inline' for scripts).
+- No switch to cookie auth without CSRF protection; writes go through
+  web/src/lib/data.svelte.ts, not from components.
+- Service worker must never cache /api responses.
+- Deployment: container binds to 127.0.0.1 only (PocketBase trusts X-Real-IP);
+  non-root user; nginx template keeps blocking /_/ (admin) and keeps security
+  headers; PocketBase download keeps its SHA256 check; no secrets committed
+  (deploy/.env.example holds placeholders only); GitHub Actions without
+  over-broad permissions or untrusted input interpolated into `run:`.
+- PocketBase hooks (pb/pb_hooks) and migrations: no raw SQL built from user input."""
+
+[[sections]]
+key = "spec"
+title = "📐 Spec consistency"
+reference = true
+checklist = """
+does the change match docs/spec.md and the rules in CLAUDE.md? This applies to
+code PRs (does the code implement the spec?) AND docs PRs (is the spec internally
+consistent, are edited sections coherent with the rest?). Also flag:
+- behaviour or data-model changes without a matching update to docs/spec.md, its
+  "Prototype sync log", and docs/prototype/index.html where the UI is affected;
+- an edited migration file that already existed (schema changes must be new
+  migration files), or a schema change without matching web/src/lib/types.ts;
+- a PocketBase version bump not applied to both Dockerfile and CI.
+Cite the spec section (or "CLAUDE.md: <section>")."""

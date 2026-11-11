@@ -1,0 +1,18 @@
+# Development backend: PocketBase with the repo's migrations and hooks mounted.
+#   docker compose -f compose.dev.yml up
+# Then run the frontend with hot reload:  cd web && pnpm dev
+# Admin dashboard: http://localhost:8090/_/
+# Schema changes made in the dashboard are written as new migration files
+# into pb/pb_migrations (automigrate) — commit them.
+
+services:
+  pocketbase:
+    build:
+      context: .
+      target: pocketbase
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pb/pb_migrations:/pb/pb_migrations
+      - ./pb/pb_hooks:/pb/pb_hooks
+      - ./pb/pb_data:/pb/pb_data
