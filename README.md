@@ -9,6 +9,8 @@ It's an installable web app (PWA) for Android phones and browsers, backed by
 [PocketBase](https://pocketbase.io). Changes sync live between everyone who's
 shopping.
 
+https://github.com/user-attachments/assets/4feaf468-e1b0-4c41-8d1e-736bf7efb387
+
 - **Spec:** [docs/spec.md](docs/spec.md) (living version: [ShopApp – Spec](https://claude.ai/artifact/DPjmRyRE4V32geGviEx4hQ))
 - **Clickable prototype:** [docs/prototype/index.html](docs/prototype/index.html) (living version: [prototype](https://claude.ai/artifact/9QkWqMkrRvH2H3bqnyfAUK))
 
