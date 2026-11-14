@@ -56,7 +56,8 @@ All collections except `units` carry `household` and use the rules
 - **Every new collection** gets the household rules (see Data model). Admin-only features don't go in the app; the admin uses the PocketBase dashboard via SSH tunnel.
 - **Trusted proxy:** PocketBase trusts `X-Real-IP` (seed migration). Only safe while nginx is the single way in and the container binds to 127.0.0.1.
 - **Bumping PocketBase:** update `PB_VERSION` and both `PB_SHA256_*` in `Dockerfile` (from the release's `checksums.txt`) and `PB_VERSION` in CI. Dependabot doesn't track it.
-- **nginx template** (`deploy/nginx/`) is tested in CI by `scripts/nginx-test.sh`. Keep that test in step with the template.
+- **nginx template** (`deploy/nginx/`) is an allow-list: only `/api/collections/<the app's collections>/`, `/api/files/`, `/api/realtime` and `/api/health` reach PocketBase, every other `/api/` path is a 404. Never go back to blocking admin paths by name: PocketBase also accepts a collection's id and any letter case. **A new collection must be added to the list** in the template; `scripts/nginx-test.sh` (CI) fails if one is missing. Keep that test in step with the template.
+- **Passwords:** the server enforces the minimum length (`users` 10, `_superusers` 12; migration `1794640000`). Keep `MIN` in `AccountSheet.svelte` equal to the `users` value.
 
 ## Conventions
 

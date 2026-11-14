@@ -5,7 +5,8 @@
 #   sudo nginx -t && sudo systemctl reload nginx
 #
 # The PocketBase admin (dashboard + superuser API) is NOT reachable through
-# this site at all. Use an SSH tunnel instead (see deploy/README.md):
+# this site at all: only the API paths the app needs are let through.
+# Use an SSH tunnel instead (see deploy/README.md):
 #   ssh -L 8090:127.0.0.1:8090 you@server   →   http://localhost:8090/_/
 
 server {
@@ -35,27 +36,52 @@ server {
     # camera=(self) keeps barcode scanning (phase 3) possible.
     add_header Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" always;
 
-    # --- Admin surface: never public --------------------------------------
-    location ^~ /_/ { return 404; }
-    location ^~ /api/collections/_superusers/ { return 404; }
-    location ~ ^/api/(settings|backups|logs|crons)(/|$) { return 404; }
+    # --- Proxy settings ----------------------------------------------------
+    # Set here, at server level, and inherited by every location that proxies
+    # (for the same reason as the headers above: don't repeat any of them
+    # inside a location, or that location loses the rest).
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    # PocketBase trusts X-Real-IP for rate limiting (see deploy/README.md):
+    # always overwrite it with the real client address.
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    # Realtime sync uses Server-Sent Events: no buffering, long timeout.
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
 
-    # --- App, API and realtime ---------------------------------------------
+    # --- Admin dashboard: never public ---------------------------------------
+    location = /_ { return 404; }
+    location ^~ /_/ { return 404; }
+
+    # --- API: allow-list -----------------------------------------------------
+    # Only what the app uses gets through; every other /api/ path answers 404.
+    # That covers the superuser login, settings, backups, logs, crons, the
+    # collection schema API and batch, and whatever PocketBase adds later.
+    #
+    # Why a list of what's allowed and not of what's blocked: PocketBase
+    # accepts a collection's id as well as its name, in any letter case, so
+    # blocking "/api/collections/_superusers/" by name left the admin login
+    # reachable as /api/collections/pbc_3142635823/... and .../_SUPERUSERS/...
+    #
+    # A new collection in pb/pb_migrations must be added to this list
+    # (scripts/nginx-test.sh fails in CI if one is missing).
+    location /api/ { return 404; }
+    location ~ ^/api/collections/(users|households|units|categories|stores|item_types|item_stores|products|product_stores|list_entries|events)/ {
+        proxy_pass http://127.0.0.1:8090;
+    }
+    # Product photos and their short-lived file tokens. (The SDK addresses
+    # files by collection id, so this can't be narrowed to names.)
+    location ^~ /api/files/ { proxy_pass http://127.0.0.1:8090; }
+    location = /api/realtime { proxy_pass http://127.0.0.1:8090; }
+    location = /api/health { proxy_pass http://127.0.0.1:8090; }
+
+    # --- The app itself (static files, client-side routes) --------------------
     location / {
         proxy_pass http://127.0.0.1:8090;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        # PocketBase trusts X-Real-IP for rate limiting (see deploy/README.md):
-        # always overwrite it with the real client address.
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Connection "";
-
-        # Realtime sync uses Server-Sent Events: no buffering, long timeout.
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 1h;
     }
 }
 

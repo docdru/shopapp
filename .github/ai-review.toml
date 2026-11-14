@@ -46,7 +46,9 @@ this app is publicly reachable -- be strict. Check especially:
   web/src/lib/data.svelte.ts, not from components.
 - Service worker must never cache /api responses.
 - Deployment: container binds to 127.0.0.1 only (PocketBase trusts X-Real-IP);
-  non-root user; nginx template keeps blocking /_/ (admin) and keeps security
+  non-root user; nginx template stays an allow-list (only the app's collections,
+  /api/files/, /api/realtime, /api/health; a new collection is added to it; no
+  return to blocking admin paths by name) and keeps blocking /_/ and its security
   headers; PocketBase download keeps its SHA256 check; no secrets committed
   (deploy/.env.example holds placeholders only); GitHub Actions without
   over-broad permissions or untrusted input interpolated into `run:`.

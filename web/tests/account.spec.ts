@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { ANNA, CARLA, addViaEnter, diagnostics, entry, login, visible } from './helpers';
+import { ANNA, BEN, CARLA, addViaEnter, diagnostics, entry, login, visible } from './helpers';
 
 // Changing your own password (Account sheet). Uses Carla, who no other test
 // signs in as. Runs first (one worker, alphabetical).
@@ -74,4 +74,21 @@ test('change password: validation, other devices signed out, new password works'
   const again = await openAccount(phone);
   await again.getByRole('button', { name: 'Log out' }).click();
   await expect(phone).toHaveURL(/\/login$/);
+});
+
+// The 10-character minimum isn't only a rule of the account sheet: the server
+// refuses shorter passwords too, for anyone who talks to the API directly.
+test('the server refuses a new password under 10 characters', async ({ request }) => {
+  const auth = await request.post('/api/collections/users/auth-with-password', {
+    data: { identity: BEN.email, password: BEN.password }
+  });
+  expect(auth.status()).toBe(200);
+  const { token, record } = await auth.json();
+
+  const change = await request.patch(`/api/collections/users/records/${record.id}`, {
+    headers: { Authorization: token },
+    data: { oldPassword: BEN.password, password: '123456789', passwordConfirm: '123456789' }
+  });
+  expect(change.status()).toBe(400);
+  expect((await change.json()).data.password.code).toBe('validation_min_text_constraint');
 });
