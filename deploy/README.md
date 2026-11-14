@@ -8,7 +8,7 @@ through an SSH tunnel.
 ```
 Android / browser ──HTTPS 443──▶ nginx ──▶ 127.0.0.1:8090 ──▶ container "shopapp"
                                    │                          └─ PB_DATA_DIR on the gocryptfs drive
-                       /_/ and superuser API → 404
+                       only the app's API paths; /_/ and all admin APIs → 404
 You (admin) ──SSH tunnel──────────────────▶ 127.0.0.1:8090/_/
 ```
 
@@ -35,9 +35,12 @@ You (admin) ──SSH tunnel─────────────────�
    docker compose exec app /pb/pocketbase superuser upsert you@example.com 'long-random-password' \
      --dir /pb/pb_data --encryptionEnv=PB_ENCRYPTION_KEY
    ```
+   The server wants at least 12 characters for an admin password.
 7. **Family accounts:** open the admin dashboard (below) → *users* → *New record*,
    one per family member (name, email, password, household "Family", verified).
-   Sign-up from the app is disabled on purpose.
+   Sign-up from the app is disabled on purpose. Passwords need at least 10
+   characters. The login page is public, so pick ones nobody could guess
+   (a password manager or a few random words), not a name plus a year.
 8. On each Android phone, open the site in Chrome and choose **Add to Home screen**
    or **Install app**.
 
@@ -103,9 +106,14 @@ encrypted. Leave it empty until you configure SMTP or S3 backups.
 
 ## Admin dashboard (SSH tunnel)
 
-nginx answers `404` for `/_/`, `/api/collections/_superusers/…` and the
-settings, backups and logs APIs. Nobody on the internet can even try the admin
-login. To administer, tunnel to the container from your computer:
+nginx lets through only the API paths the app itself uses: its own
+collections, product photos, realtime sync and the health check. Everything
+else under `/api/` and the dashboard at `/_/` answer `404`: the superuser
+login, settings, backups, logs. Nobody on the internet can even try the admin
+login. (The template lists what is allowed, not what is blocked, because
+PocketBase also answers to a collection's id and to any letter case of its
+name, so a block by name can be walked around.) To administer, tunnel to the
+container from your computer:
 
 ```sh
 ssh -L 8090:127.0.0.1:8090 you@your-server
@@ -115,7 +123,7 @@ ssh -L 8090:127.0.0.1:8090 you@your-server
 This works from anywhere you can SSH from, including your laptop on mobile
 data. It doesn't depend on your home IP.
 
-Optional extra: with SMTP configured (Settings → Mail settings), enable **MFA**
+Recommended once SMTP is configured (Settings → Mail settings): enable **MFA**
 for superusers (*superusers* collection → Options → Multi-factor
 authentication). PocketBase's second factor is a one-time code sent by email.
 It doesn't support authenticator apps.
@@ -131,6 +139,18 @@ docker compose pull && docker compose up -d
 
 Pending schema migrations run automatically when the container starts. To pin
 a version, set `APP_TAG=v0.1.0` in `.env`.
+
+**The nginx site is not part of the image.** When `nginx/shopapp.conf.example`
+changes in the repository (the release notes or the PR say so), copy the
+changed parts into `/etc/nginx/sites-available/shopapp.conf` and reload nginx:
+`sudo nginx -t && sudo systemctl reload nginx`. A quick check from any computer
+that the admin login is closed (all three must print `404`):
+
+```sh
+for c in _superusers _SUPERUSERS pbc_3142635823; do
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST "https://einkauf.example.com/api/collections/$c/auth-with-password"
+done
+```
 
 ## Backups
 
@@ -158,8 +178,8 @@ CLI command you run inside the container (e.g. `superuser upsert`) then needs
 | Layer | What protects it |
 | --- | --- |
 | Network | Container publishes only on `127.0.0.1:8090`; nginx is the single way in, over HTTPS (HSTS). |
-| Admin | Dashboard and superuser API blocked in nginx; admin only via SSH tunnel. Long random superuser password; optional email MFA. |
-| Accounts | No public sign-up. One login per family member. Login is rate-limited per client IP. |
+| Admin | nginx passes only the API paths the app uses (allow-list), so the dashboard, the superuser login and the settings, backups and logs APIs aren't reachable from outside under any spelling; admin only via SSH tunnel. Long random superuser password (at least 12 characters); email MFA recommended. |
+| Accounts | No public sign-up. One login per family member. Passwords need at least 10 characters (checked by the server). Login is rate-limited per client IP; there is no lock-out after failed attempts, so the passwords themselves have to be hard to guess. |
 | Data | Every collection is limited to signed-in users of the same household (checked server-side). The event log is append-only. |
 | Browser | Session token in localStorage, sent as an `Authorization` header. No cookies, so CSRF doesn't apply. XSS is limited by a strict Content-Security-Policy (no foreign scripts, connections only to our origin), plus `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy` and `Permissions-Policy` headers. |
 | Container | Runs as non-root (uid 10001), `no-new-privileges`, all capabilities dropped, memory and PID limits. PocketBase download verified by SHA-256. |
@@ -173,7 +193,12 @@ limiting and logs. That's only safe because nginx always overwrites that header
 and the container is reachable only on `127.0.0.1`. If you ever publish the
 port elsewhere or put another proxy in front, a client could fake its IP and
 dodge the rate limit. Revisit the setting (dashboard → Settings → Application
-→ trusted proxy) first.
+→ trusted proxy) first. To check the port on the server: `ss -ltn | grep 8090`
+must show `127.0.0.1:8090` only, never `0.0.0.0:8090` or `[::]:8090`.
+
+**What the app doesn't limit:** the event log only grows (nobody can delete
+from it, on purpose), and there is no storage quota per person. Anyone with a
+login could fill the drive, so keep an eye on its free space.
 
 **Changing passwords:** each family member can change their own password in the
 app: tap your name at the top → *Account*. **Lost phone or departing user:**

@@ -1,6 +1,6 @@
 <!--
 Snapshot of the living spec. Source of truth: https://claude.ai/artifact/DPjmRyRE4V32geGviEx4hQ
-Exported 2026-11-10 (spec rev 55, plus the rename in v0.12.2; the author mention is left out). Refresh this file whenever the spec changes; see docs/README.md.
+Exported 2026-11-10 (spec rev 55, plus the rename in v0.12.2 and the security changes in v0.12.3; the author mention is left out). Refresh this file whenever the spec changes; see docs/README.md.
 -->
 
 # ShopApp – Spec
@@ -92,7 +92,7 @@ Four tabs on a phone-first layout: **List**, **Stock**, **Items**, **Log**. The 
 
 **Account**
 
-- Tapping your name at the top opens the account sheet: change your password (current password, new one twice, at least 10 characters), open Stores & categories, and log out. Changing it signs you out on your other devices; they show the login page the next time they're opened or used.
+- Tapping your name at the top opens the account sheet: change your password (current password, new one twice, at least 10 characters, which the server checks too), open Stores & categories, and log out. Changing it signs you out on your other devices; they show the login page the next time they're opened or used.
 
 **Stores & categories** (from the Account sheet)
 
@@ -126,7 +126,7 @@ Decided on 2026-10-30. The code lives in [docdru/shopapp](https://github.com/doc
 | Frontend | SvelteKit 3 + Svelte 5 + TypeScript, built as a static PWA that PocketBase serves | One process, one port; installs from Chrome on Android |
 | Sync | Realtime subscriptions (Server-Sent Events); service worker caches the app shell | Two people shopping see ticks instantly; offline data sync comes later |
 | Accounts | One login per family member, grouped into a household; no public sign-up | Log shows who did what; admin creates accounts |
-| Hosting | One Docker container on 127.0.0.1:8090 behind the existing nginx (Let's Encrypt, port 443); admin dashboard only via SSH tunnel; non-root container, strict CSP and security headers | Fits the existing public server |
+| Hosting | One Docker container on 127.0.0.1:8090 behind the existing nginx (Let's Encrypt, port 443); admin dashboard only via SSH tunnel, nginx lets through only the API paths the app uses; non-root container, strict CSP and security headers | Fits the existing public server |
 | Releases | GitHub Actions builds amd64/arm64 images to ghcr.io; server runs `docker compose pull && up -d` | Migrations run on start |
 | Packaging (optional) | Trusted Web Activity via Bubblewrap | Only if a Play Store / APK install is wanted |
 | Barcode (phase 3) | Browser BarcodeDetector API, ZXing fallback | No native app needed |
@@ -150,6 +150,7 @@ Spec and [clickable prototype](https://claude.ai/artifact/9QkWqMkrRvH2H3bqnyfAUK
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-14 | v0.12.3 | Security review: the server now enforces the 10-character password minimum the account sheet already asked for (admin: 12); nginx lets through only the API paths the app uses, so the admin login is no longer reachable from outside under the collection's id or another letter case. No change to screens. Prototype unchanged. |
 | 2026-11-10 | v0.12.2 | Renamed to ShopApp; the code moves to the public repository docdru/shopapp. No behaviour change. Prototype: title only. |
 | 2026-11-08 | v0.12.1 | Tech stack: SvelteKit 3 (with Vite 8, TypeScript 6). No behaviour change. Prototype unchanged. |
 | 2026-11-07 | v0.12 | App + prototype: one-offs get a “Buy at” store in their sheet (only shown at that store). Store chips only for stores with something on the list (selected one stays); new **Other** chip for entries without a clear store (Buy here, preferred product, specific product or one-off store; OK-only stores don't count); at a store those follow in “Other · no clear store”. Data model: ListEntry store (one-offs). “+ New store” in a one-off's Buy at chips and under an item's store rules (picks the new store; Buy here for items). Store pickers sorted by use, top five plus stores already set, the rest behind “Show N more”. |
