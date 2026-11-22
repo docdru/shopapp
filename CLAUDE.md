@@ -65,7 +65,7 @@ All collections except `units` carry `household` and use the rules
 
 ## Conventions
 
-- **Schema changes = new migration files.** Never edit a migration that has been merged; add a new one. Keep `web/src/lib/types.ts` in sync.
+- **Schema changes = new migration files.** Never edit a migration that has been merged; add a new one. Keep `web/src/lib/types.ts` in sync. Settings that come from the environment (sign-in) are applied by `pb/pb_hooks/auth.pb.js` at start, not by a migration. That hook calls `runAllMigrations()` before applying them; it runs the same migration files `serve` would run a moment later, it doesn't change the schema itself.
 - **Bought ≠ Not needed:** only Bought counts as a purchase. Every user action writes an `events` record.
 - Keep UI phone-first, one-handed, and big tap targets. Colors and tokens are in `web/src/app.css`, matching the prototype.
 - English UI strings for now. Plain CSS in components, no UI framework.
