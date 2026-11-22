@@ -19,3 +19,7 @@ pb/pb_data/
 # Python
 __pycache__/
 *.pyc
+
+# Playwright output
+web/test-results/
+web/playwright-report/

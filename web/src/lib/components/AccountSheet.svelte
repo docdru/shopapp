@@ -4,9 +4,17 @@
   import { data } from '#lib/data.svelte.js';
   import { goto } from '$app/navigation';
   import { toast } from '#lib/toast.svelte.js';
+  import { onMount } from 'svelte';
 
   // The signed-in user's account: change password, log out.
   let { onclose }: { onclose: () => void } = $props();
+
+  // "Change password" only while password sign-in is on (spec "Sign-in").
+  // Unknown (server not asked yet, or offline) = show it, as before.
+  const passwordOn = $derived(auth.methods?.password ?? true);
+  onMount(() => {
+    if (!auth.methods) auth.loadMethods().catch(() => {});
+  });
 
   const MIN = 10;
 
@@ -60,30 +68,32 @@
     }}>Stores & categories</button
   >
 
-  <form onsubmit={change}>
-    <p class="label">Change password</p>
-    <!-- lets password managers link the new password to the account -->
-    <input type="email" autocomplete="username" value={auth.user?.email ?? ''} hidden readonly />
-    <div class="field">
-      <label for="pw-current">Current password</label>
-      <input id="pw-current" type="password" autocomplete="current-password" bind:value={current} required />
-    </div>
-    <div class="field">
-      <label for="pw-new">New password</label>
-      <input id="pw-new" type="password" autocomplete="new-password" bind:value={next} required />
-    </div>
-    <div class="field">
-      <label for="pw-repeat">Repeat new password</label>
-      <input id="pw-repeat" type="password" autocomplete="new-password" bind:value={repeat} required />
-    </div>
-    <p class="meta">At least {MIN} characters. Changing it signs you out on your other devices.</p>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
-    <div class="actions">
-      <button type="submit" class="btn primary" disabled={busy}>
-        {busy ? 'Changing…' : 'Change password'}
-      </button>
-    </div>
-  </form>
+  {#if passwordOn}
+    <form onsubmit={change}>
+      <p class="label">Change password</p>
+      <!-- lets password managers link the new password to the account -->
+      <input type="email" autocomplete="username" value={auth.user?.email ?? ''} hidden readonly />
+      <div class="field">
+        <label for="pw-current">Current password</label>
+        <input id="pw-current" type="password" autocomplete="current-password" bind:value={current} required />
+      </div>
+      <div class="field">
+        <label for="pw-new">New password</label>
+        <input id="pw-new" type="password" autocomplete="new-password" bind:value={next} required />
+      </div>
+      <div class="field">
+        <label for="pw-repeat">Repeat new password</label>
+        <input id="pw-repeat" type="password" autocomplete="new-password" bind:value={repeat} required />
+      </div>
+      <p class="meta">At least {MIN} characters. Changing it signs you out on your other devices.</p>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="actions">
+        <button type="submit" class="btn primary" disabled={busy}>
+          {busy ? 'Changing…' : 'Change password'}
+        </button>
+      </div>
+    </form>
+  {/if}
 
   <div class="logout">
     <button type="button" class="btn danger" onclick={() => auth.logout()}>Log out</button>

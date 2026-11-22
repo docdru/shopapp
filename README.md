@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/4feaf468-e1b0-4c41-8d1e-736bf7efb387
 | `docs/` | Spec and clickable prototype (snapshots of the living versions) |
 | `web/` | SvelteKit 3 + Svelte 5 + TypeScript frontend, built as a static PWA |
 | `pb/pb_migrations/` | PocketBase schema and seed data as JS migrations |
-| `pb/pb_hooks/` | Server-side JS hooks (empty for now) |
+| `pb/pb_hooks/` | Server-side JS hooks: sign-in settings from the environment (single sign-on, password on/off), applied at every start |
 | `Dockerfile` | Builds the frontend and bundles it with PocketBase into one image |
 | `compose.dev.yml` | Local PocketBase for development |
 | `deploy/` | Production compose file, `.env` example and nginx site template |
@@ -70,6 +70,14 @@ the repo root):
 cd web && pnpm build && cd ..
 sh scripts/e2e-setup.sh ./pocketbase     # throwaway DB on :8090 with test users
 cd web && pnpm exec playwright install chromium && pnpm test:e2e
+```
+
+The sign-in modes (single sign-on + password, single sign-on only, the
+lock-out guard) run against a mock OIDC provider (`scripts/mock-oidc.mjs`),
+each with a fresh PocketBase:
+
+```sh
+bash scripts/e2e-oidc.sh ./pocketbase    # from the repo root, after pnpm build
 ```
 
 ## Deployment

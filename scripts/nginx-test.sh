@@ -32,6 +32,8 @@ expect_status() { # path method expected
 }
 expect_status /api/health GET 200
 expect_status /login GET 200
+# Single sign-on return address (a client-side route of the app).
+expect_status /login/callback GET 200
 
 # Admin surface: dashboard and every superuser / settings API.
 expect_status /_ GET 404
@@ -58,6 +60,9 @@ expect_status /api/crons GET 404
 expect_status /api/batch POST 404
 expect_status /api/ GET 404
 expect_status /api/not-a-real-endpoint GET 404
+# PocketBase's popup/realtime OAuth2 flow; the app uses the redirect flow, so it stays closed.
+expect_status /api/oauth2-redirect GET 404
+expect_status /api/oauth2-redirect POST 404
 
 # Every collection the app uses must be on the template's allow-list: ask
 # PocketBase (directly, as the e2e admin) for its collections and check that
@@ -70,8 +75,10 @@ collections=$(curl -fs "http://127.0.0.1:8090/api/collections?perPage=200&fields
   | python3 -c 'import sys,json; print(" ".join(c["name"] for c in json.load(sys.stdin)["items"] if not c["system"]))')
 [ -n "$collections" ] || { echo "FAIL no collections found"; fail=1; }
 for c in $collections; do expect_status "/api/collections/$c/records" GET 200; done
-# Login endpoint and file tokens (401 = reached PocketBase, which wants a login).
+# Login endpoints and file tokens (401 = reached PocketBase, which wants a login).
 expect_status /api/collections/users/auth-methods GET 200
+# Single sign-on code exchange: 403 = reached PocketBase, which has no provider in this test.
+expect_status /api/collections/users/auth-with-oauth2 POST 403
 expect_status /api/files/token POST 401
 
 headers=$(curl -ks -D - -o /dev/null "$URL/login" | tr -d '\r')

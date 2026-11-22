@@ -2,6 +2,8 @@
 # Starts a throwaway PocketBase with the repo's migrations and the built app,
 # and creates two test users in the seeded "Family" household.
 # Usage: scripts/e2e-setup.sh <path-to-pocketbase-binary>
+# Sign-in settings (OIDC_*, PASSWORD_LOGIN) are taken from the environment,
+# like in production; none set = password only. scripts/e2e-oidc.sh uses that.
 set -eu
 
 PB="$1"
@@ -15,7 +17,8 @@ rm -rf "$DATA"
 "$PB" superuser upsert "$ADMIN_EMAIL" "$ADMIN_PASS" --dir "$DATA" >/dev/null
 
 "$PB" serve --http 127.0.0.1:8090 --dir "$DATA" --migrationsDir pb/pb_migrations \
-  --publicDir web/build --dev=false > /tmp/pb_e2e.log 2>&1 &
+  --hooksDir pb/pb_hooks --publicDir web/build --dev=false > /tmp/pb_e2e.log 2>&1 &
+echo $! > /tmp/pb_e2e.pid
 
 for _ in $(seq 1 30); do
   curl -fs "$URL/api/health" >/dev/null && break
