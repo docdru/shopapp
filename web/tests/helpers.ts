@@ -43,7 +43,7 @@ export async function login(browser: Browser, who: typeof ANNA): Promise<Page> {
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('Email').fill(who.email);
   await page.getByLabel('Password').fill(who.password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(addField(page)).toBeVisible();
   return page;
 }

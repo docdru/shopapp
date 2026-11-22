@@ -43,6 +43,8 @@ You (admin) ──SSH tunnel─────────────────�
    (a password manager or a few random words), not a name plus a year.
 8. On each Android phone, open the site in Chrome and choose **Add to Home screen**
    or **Install app**.
+9. Optional: **single sign-on** with two-factor authentication through your
+   own identity provider, see [Single sign-on (OIDC)](#single-sign-on-oidc).
 
 ## Data on the encrypted drive (gocryptfs)
 
@@ -128,6 +130,159 @@ for superusers (*superusers* collection → Options → Multi-factor
 authentication). PocketBase's second factor is a one-time code sent by email.
 It doesn't support authenticator apps.
 
+## Single sign-on (OIDC)
+
+Instead of (or next to) email + password, the family can sign in through an
+OpenID Connect provider you run or trust: Authelia, Keycloak, Authentik,
+Pocket ID, Google, … Two-factor authentication is then the provider's job:
+ShopApp trusts a completed sign-in and asks for nothing more. The examples
+below use Authelia.
+
+Everything is set in `.env` and applied at every start, no dashboard needed:
+
+| Variable | Meaning |
+| --- | --- |
+| `OIDC_ISSUER` | The provider's issuer URL, e.g. `https://auth.example.com`. The endpoints are read from `<issuer>/.well-known/openid-configuration` at start. |
+| `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | The client you register at the provider (below). |
+| `OIDC_NAME` | Button label: "Sign in with *Authelia*". Default "SSO". |
+| `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`, `OIDC_USERINFO_URL` | Only if discovery doesn't work: explicit endpoints, each overrides the discovered one. |
+| `PASSWORD_LOGIN` | `on` (default) or `off`. |
+
+Three modes: nothing set = password only (as before); provider set = both;
+provider set and `PASSWORD_LOGIN=off` = single sign-on only. With it off, the
+server refuses password sign-in for family accounts (not just the page), and
+the account sheet hides "Change password". **Lock-out guard:**
+`PASSWORD_LOGIN=off` only takes effect while the provider is fully configured
+(client ID, secret and all three endpoints). Otherwise password sign-in stays
+on and the log says why. The admin (superuser) is not affected by any of this:
+still password only, still only through the SSH tunnel.
+
+What happens at the first single sign-on: ShopApp **doesn't create
+accounts**. It links the provider account to the existing family account
+with the same email address, and from then on uses that link (even if the
+email changes at the provider). Without a matching account, the login page
+says so and nothing is created. Only an email the provider marks as verified
+(`email_verified`) is used for this. **You must trust the provider's email
+addresses:** whoever controls an account there with a family member's email
+signs in as that family member. With your own Authelia and its user list
+that's you.
+
+### 1. Register ShopApp at the provider (Authelia)
+
+Generate a client secret and its digest (Authelia stores only the digest):
+
+```sh
+docker run --rm authelia/authelia:latest authelia crypto hash generate pbkdf2 \
+  --variant sha512 --random --random.length 72 --random.charset rfc3986
+```
+
+It prints a *Random Password* (goes into ShopApp's `.env` as
+`OIDC_CLIENT_SECRET`) and a *Digest* (goes into Authelia's config). Add the
+client to Authelia's `configuration.yml` (Authelia 4.38 or later; merge it
+into your existing `identity_providers.oidc` section) and restart Authelia:
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: 'shopapp'
+        client_name: 'ShopApp'
+        client_secret: '$pbkdf2-sha512$310000$...'   # the Digest
+        public: false
+        authorization_policy: 'two_factor'
+        require_pkce: true
+        pkce_challenge_method: 'S256'
+        redirect_uris:
+          - 'https://einkauf.example.com/login/callback'
+        scopes: ['openid', 'email', 'profile']
+        response_types: ['code']
+        grant_types: ['authorization_code']
+        token_endpoint_auth_method: 'client_secret_basic'
+        # Ask for consent once, then remember it for a year:
+        consent_mode: 'pre-configured'
+        pre_configured_consent_duration: '1y'
+```
+
+Every family member needs an Authelia user whose `email` is the same as the
+email of their ShopApp account. Other providers: create a "confidential" web
+client with the authorization code flow and PKCE (S256), the redirect URI
+`https://<your app>/login/callback` and the scopes `openid email profile`.
+
+### 2. Configure ShopApp
+
+In `/opt/shopapp/.env`:
+
+```sh
+OIDC_ISSUER=https://auth.example.com
+OIDC_CLIENT_ID=shopapp
+OIDC_CLIENT_SECRET=<the Random Password>
+OIDC_NAME=Authelia
+PASSWORD_LOGIN=on
+```
+
+Then `docker compose up -d` and check the log:
+
+```sh
+docker compose logs app | grep sign-in
+# [sign-in] password sign-in on, single sign-on "Authelia" (https://auth.example.com/api/oidc/authorization)
+```
+
+A `[sign-in] WARNING` line says what's missing or unreachable. The nginx site
+needs no change: the login uses only paths that are already allowed.
+
+**Can the container reach the provider?** ShopApp's server talks to the
+provider directly (discovery at start, and the code exchange at every
+sign-in), under the provider's public name. With Authelia on the same host
+that normally works through your nginx. To check:
+
+```sh
+docker compose exec app wget -qO- https://auth.example.com/.well-known/openid-configuration | head -c 200
+```
+
+If that fails (DNS points somewhere the container can't reach, or a firewall
+blocks traffic from Docker to the host), map the name to the host in
+`compose.yml` (the commented `extra_hosts` block):
+`"auth.example.com:host-gateway"`. That works if nginx listens on all
+addresses; otherwise use the server's public IP instead of `host-gateway`.
+If the provider is down while ShopApp starts, ShopApp keeps the endpoints from
+its last successful start and logs a warning.
+
+### 3. Moving the family over
+
+1. Start with both on (`PASSWORD_LOGIN=on`, as above).
+2. Everyone signs in once with the button. That links their account. Passwords
+   keep working meanwhile. (If an account wasn't marked *verified*, the first
+   single sign-on marks it verified and leaves the password as it is.)
+3. Check that everyone is linked (next section).
+4. Set `PASSWORD_LOGIN=off`, `docker compose up -d`. The login page now shows
+   only the button, and the server refuses password sign-in.
+5. Optional: devices that are already signed in stay signed in (sessions work
+   as before), so they won't see the second factor until they sign in again.
+   To make every device sign in again now: dashboard → *users* → ⚙ (collection
+   settings) → *Options* → *Token options (invalidate, duration)* → *Auth* →
+   **Invalidate all previously issued tokens**, then save.
+
+Passwords aren't deleted when password sign-in is off. Switching it back on is
+the same change the other way round.
+
+### Who is linked?
+
+Dashboard (SSH tunnel) → *users* → open a person → tab **Auth providers**:
+it lists the linked provider account (with its ID at the provider), or "No
+external auth providers found." Unlink there if the wrong account got linked
+or the person has a new one at the provider; their next single sign-on links
+again by email. For everyone at once: show the system collections in the
+sidebar → **`_externalAuths`**, one row per link (`recordRef` = the user's id).
+
+### Recovery
+
+- **Provider down, broken or gone:** set `PASSWORD_LOGIN=on` (or remove the
+  `OIDC_*` lines) and `docker compose up -d`. Passwords work again right away.
+- **Someone forgot their password** (likely after months of single sign-on
+  only): set a new one for them in the dashboard → *users*.
+- **Locked out of the dashboard:** unaffected by single sign-on; reset the
+  admin with `superuser upsert` (First setup, step 6).
+
 ## Updates
 
 Every merge to `main` publishes `ghcr.io/docdru/shopapp:latest`; tags
@@ -179,7 +334,8 @@ CLI command you run inside the container (e.g. `superuser upsert`) then needs
 | --- | --- |
 | Network | Container publishes only on `127.0.0.1:8090`; nginx is the single way in, over HTTPS (HSTS). |
 | Admin | nginx passes only the API paths the app uses (allow-list), so the dashboard, the superuser login and the settings, backups and logs APIs aren't reachable from outside under any spelling; admin only via SSH tunnel. Long random superuser password (at least 12 characters); email MFA recommended. |
-| Accounts | No public sign-up. One login per family member. Passwords need at least 10 characters (checked by the server). Login is rate-limited per client IP; there is no lock-out after failed attempts, so the passwords themselves have to be hard to guess. |
+| Accounts | No public sign-up, also not through single sign-on (`users.createRule` stays null). One login per family member. Passwords need at least 10 characters (checked by the server). Login is rate-limited per client IP; there is no lock-out after failed attempts, so the passwords themselves have to be hard to guess, or password sign-in switched off once everyone uses single sign-on (`PASSWORD_LOGIN=off`, refused by the server, not just hidden). |
+| Single sign-on | Optional OIDC provider (e.g. Authelia, which enforces 2FA), authorization code flow with PKCE (S256), code exchanged by the server with the client secret; the app checks the `state` it stored before leaving. Links only to an existing account, by an email the provider marks verified, so the provider's email addresses must be trustworthy. Lock-out guard keeps password sign-in on unless the provider is fully configured. Logging out of ShopApp doesn't log out of the provider. |
 | Data | Every collection is limited to signed-in users of the same household (checked server-side). The event log is append-only. |
 | Browser | Session token in localStorage, sent as an `Authorization` header. No cookies, so CSRF doesn't apply. XSS is limited by a strict Content-Security-Policy (no foreign scripts, connections only to our origin), plus `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy` and `Permissions-Policy` headers. |
 | Container | Runs as non-root (uid 10001), `no-new-privileges`, all capabilities dropped, memory and PID limits. PocketBase download verified by SHA-256. |
@@ -201,7 +357,11 @@ from it, on purpose), and there is no storage quota per person. Anyone with a
 login could fill the drive, so keep an eye on its free space.
 
 **Changing passwords:** each family member can change their own password in the
-app: tap your name at the top → *Account*. **Lost phone or departing user:**
+app: tap your name at the top → *Account* (hidden while password sign-in is
+off; with single sign-on, the password and second factor are changed at the
+provider). **Lost phone or departing user:**
 change that user's password in the dashboard, or have them change it from
 another device. Either way, all their other sessions end: a signed-out phone
-shows the login page the next time it's opened or used.
+shows the login page the next time it's opened or used. With single sign-on
+only, also disable or reset the person at the provider, so the lost phone
+can't sign in again.

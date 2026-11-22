@@ -22,10 +22,11 @@
     return () => document.removeEventListener('visibilitychange', onVisible);
   });
 
-  // Simple guard: everything except /login needs a signed-in user.
-  // Pages only mount once signed in, so their data loads and realtime
-  // subscriptions always run with the user's credentials.
-  const onLogin = $derived(page.url.pathname === '/login');
+  // Simple guard: everything except /login (and the single sign-on return
+  // address /login/callback) needs a signed-in user. Pages only mount once
+  // signed in, so their data loads and realtime subscriptions always run
+  // with the user's credentials.
+  const onLogin = $derived(page.url.pathname === '/login' || page.url.pathname === '/login/callback');
 
   $effect(() => {
     if (!auth.user && !onLogin) goto('/login', { replace: true });

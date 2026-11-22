@@ -4,6 +4,18 @@
 # Admin dashboard: http://localhost:8090/_/
 # Schema changes made in the dashboard are written as new migration files
 # into pb/pb_migrations (automigrate) — commit them.
+#
+# Sign-in settings come from the environment or a .env file next to this one
+# (same names as deploy/.env.example). To try single sign-on against the
+# test provider, run on the host
+#   MOCK_OIDC_HOST=0.0.0.0 MOCK_OIDC_ISSUER=http://host.docker.internal:9099 node scripts/mock-oidc.mjs
+# then start this with
+#   OIDC_ISSUER=http://host.docker.internal:9099 OIDC_CLIENT_ID=shopapp \
+#   OIDC_CLIENT_SECRET=shopapp-secret OIDC_NAME="Test provider" \
+#   OIDC_AUTH_URL=http://localhost:9099/authorize \
+#   docker compose -f compose.dev.yml up -d
+# (the browser opens the auth URL, so it must be localhost; PocketBase calls
+# the token and userinfo URLs from inside the container).
 
 services:
   pocketbase:
@@ -12,6 +24,17 @@ services:
       target: pocketbase
     ports:
       - "8090:8090"
+    environment:
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_AUTH_URL: ${OIDC_AUTH_URL:-}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL:-}
+      OIDC_USERINFO_URL: ${OIDC_USERINFO_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-}
+      PASSWORD_LOGIN: ${PASSWORD_LOGIN:-on}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./pb/pb_migrations:/pb/pb_migrations
       - ./pb/pb_hooks:/pb/pb_hooks

@@ -1,6 +1,6 @@
 <!--
 Snapshot of the living spec. Source of truth: https://claude.ai/artifact/DPjmRyRE4V32geGviEx4hQ
-Exported 2026-11-10 (spec rev 55, plus the rename in v0.12.2 and the security changes in v0.12.3; the author mention is left out). Refresh this file whenever the spec changes; see docs/README.md.
+Exported 2026-11-22 (spec rev 67, v0.13; plus the rename in v0.12.2, which this file had already; the author mention is left out). Refresh this file whenever the spec changes; see docs/README.md.
 -->
 
 # ShopApp – Spec
@@ -90,9 +90,20 @@ Four tabs on a phone-first layout: **List**, **Stock**, **Items**, **Log**. The 
 
 - Newest-first list of events: who, what, where, when.
 
+**Sign-in** (since v0.13)
+
+- Two ways to sign in: email + password (as today), and single sign-on through an OpenID Connect (OIDC) provider. The provider can be Authelia, Keycloak, Authentik, Pocket ID, Google or any other standard one. Each way is switched on or off by the server's configuration, giving three modes: password only (the default, for installs that don't want a provider), both (while a family moves over), single sign-on only.
+- Two-factor authentication is the provider's job. ShopApp trusts a completed single sign-on and doesn't ask for a second factor itself. Which factors are required (for Authelia: the client's two_factor policy) is set at the provider.
+- The login page shows what is switched on: a “Sign in with <provider name>” button, the email + password form, or both. The button leaves the app for the provider's page and comes back signed in (a full-page redirect, no popup, so it works in the installed app on Android).
+- No account is created by single sign-on. The admin still creates every account. The first single sign-on links to the existing account with the same email address (only an email the provider marks as verified counts); from then on the link is used, even if the email changes at the provider. Without a matching account, the login page says so and nothing is created.
+- Moving a family over: switch on both, let everyone sign in once through the provider, then switch password sign-in off. With it off, the server refuses password sign-in (not just the page), and the account sheet hides “Change password”. Switching it back on is a configuration change and a restart; passwords are kept.
+- Lock-out guard: password sign-in can only be switched off while a provider is configured. Otherwise the server keeps it on and says so in its log.
+- Sessions are as today: a device stays signed in until it logs out or its session is revoked, so the second factor is asked at sign-in, not at every use. Logging out of ShopApp doesn't log out of the provider.
+- The admin (PocketBase superuser) is not part of this: still password only, still reachable only through the SSH tunnel.
+
 **Account**
 
-- Tapping your name at the top opens the account sheet: change your password (current password, new one twice, at least 10 characters, which the server checks too), open Stores & categories, and log out. Changing it signs you out on your other devices; they show the login page the next time they're opened or used.
+- Tapping your name at the top opens the account sheet: change your password while password sign-in is on (current password, new one twice, at least 10 characters, which the server checks too), open Stores & categories, and log out. Changing it signs you out on your other devices; they show the login page the next time they're opened or used.
 
 **Stores & categories** (from the Account sheet)
 
@@ -131,6 +142,7 @@ Decided on 2026-10-30. The code lives in [docdru/shopapp](https://github.com/doc
 | Packaging (optional) | Trusted Web Activity via Bubblewrap | Only if a Play Store / APK install is wanted |
 | Barcode (phase 3) | Browser BarcodeDetector API, ZXing fallback | No native app needed |
 | Product photos | PocketBase file field on products, protected (served only with a short-lived file token of a household member); the phone shrinks photos to 1024 px JPEG (drops location metadata); thumbnails 96 px and 480 px; JPEG / PNG / WebP only, no SVG | Fast on mobile data; a leaked link shows nothing; backups stay small |
+| Sign-in & 2FA | PocketBase's built-in generic OIDC provider (authorization code flow with PKCE) next to password sign-in; provider and password on/off set by environment variables in deploy/.env (OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_NAME, PASSWORD_LOGIN) and applied at every start by a server hook; nothing set = password only. Redirect address to register at the provider: https://<app>/login/callback | 2FA without building it into the app; any standard provider works; forks without a provider keep working unchanged |
 
 ## Open questions
 
@@ -150,6 +162,7 @@ Spec and [clickable prototype](https://claude.ai/artifact/9QkWqMkrRvH2H3bqnyfAUK
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-22 | v0.13 | App: single sign-on through any OIDC provider (Authelia first) so the provider can require 2FA. Password sign-in stays as a configurable fallback and for moving users over, and can be switched off afterwards; default is password only. New Sign-in section under Screens & flows, new Tech stack row. Account sheet hides Change password while password sign-in is off. Prototype unchanged (it has no login page). |
 | 2026-11-14 | v0.12.3 | Security review: the server now enforces the 10-character password minimum the account sheet already asked for (admin: 12); nginx lets through only the API paths the app uses, so the admin login is no longer reachable from outside under the collection's id or another letter case. No change to screens. Prototype unchanged. |
 | 2026-11-10 | v0.12.2 | Renamed to ShopApp; the code moves to the public repository docdru/shopapp. No behaviour change. Prototype: title only. |
 | 2026-11-08 | v0.12.1 | Tech stack: SvelteKit 3 (with Vite 8, TypeScript 6). No behaviour change. Prototype unchanged. |
