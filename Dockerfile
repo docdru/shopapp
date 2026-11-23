@@ -4,10 +4,12 @@
 # Runs on the build machine's own platform: the output is plain HTML/JS/CSS,
 # the same for every target. Building it under QEMU for arm64 crashes Vite 8's
 # native bundler (rolldown) with "Illegal instruction" and is slow anyway.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web
-RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml* ./
+# Node 25+ no longer ships corepack: install the pnpm version that
+# package.json pins in "packageManager" with npm instead.
+RUN npm install -g "$(node -p "require('./package.json').packageManager.split('+')[0]")"
 RUN if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
 COPY web/ ./
 RUN pnpm build
