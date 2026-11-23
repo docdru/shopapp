@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/4feaf468-e1b0-4c41-8d1e-736bf7efb387
 
 ## Development
 
-Requirements: Docker, Node 22 and pnpm (`corepack enable`).
+Requirements: Docker, Node 26 and pnpm 10 (`npm install -g pnpm@10`; Node no longer ships corepack).
 
 ```sh
 # 1. Backend: PocketBase with the repo's migrations, on http://localhost:8090

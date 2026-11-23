@@ -37,6 +37,7 @@ updates:
       interval: weekly
     ignore:
       # Only long-term-support Node releases (even majors). Odd majors are
-      # short-lived; Node 25 also dropped corepack, which the build uses.
+      # short-lived. A new major also needs node-version in ci.yml and
+      # @types/node moved with it.
       - dependency-name: node
         versions: ["23.x", "25.x", "27.x", "29.x", "31.x", "33.x", "35.x", "37.x", "39.x"]
